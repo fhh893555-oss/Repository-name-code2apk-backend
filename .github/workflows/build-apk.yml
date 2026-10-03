@@ -7,8 +7,7 @@ app_name:
 description: "Application name"
 required: true
 type: string
-
-  package_id:
+package_id:
     description: "Android package ID"
     required: true
     type: string
