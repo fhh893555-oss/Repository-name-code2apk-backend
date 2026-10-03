@@ -2,35 +2,76 @@ name: Build Flutter APK
 
 on:
   workflow_dispatch:
+    inputs:
+      app_name:
+        description: "Application name"
+        required: true
+        type: string
+
+      package_id:
+        description: "Android package ID"
+        required: true
+        type: string
+
+      project_name:
+        description: "Flutter project name"
+        required: true
+        type: string
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.6'
+          flutter-version: "3.35.6"
           channel: stable
           cache: true
 
-      - name: Check Flutter
-        run: flutter --version
+      - name: Create Flutter project
+        run: |
+          rm -rf flutter_app
+
+          flutter create \
+            --org "${{ inputs.package_id }}" \
+            --project-name "${{ inputs.project_name }}" \
+            flutter_app
+
+      - name: Change application name
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("flutter_app/lib/main.dart")
+
+          text = path.read_text()
+
+          app_name = "${{ inputs.app_name }}"
+
+          text = text.replace(
+              "MyHomePage(title: 'Flutter Demo Home Page')",
+              "MyHomePage(title: '" + app_name + "')"
+          )
+
+          path.write_text(text)
+          PY
 
       - name: Get dependencies
-        run: flutter pub get
         working-directory: flutter_app
+        run: flutter pub get
 
       - name: Build APK
-        run: flutter build apk --release
         working-directory: flutter_app
+        run: flutter build apk --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Code2APK-release
+          name: Code2APK-${{ inputs.project_name }}
           path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
