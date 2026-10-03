@@ -17,11 +17,6 @@ package_id:
     required: true
     type: string
 
-  description:
-    description: "Application description"
-    required: true
-    type: string
-
 jobs:
 build:
 runs-on: ubuntu-latest
@@ -47,117 +42,28 @@ steps:
         --project-name "${{ inputs.project_name }}" \
         flutter_app
 
-  - name: Generate application
+  - name: Change application name
     working-directory: flutter_app
     env:
       APP_NAME: ${{ inputs.app_name }}
-      APP_DESCRIPTION: ${{ inputs.description }}
     run: |
       python3 - <<'PY'
       from pathlib import Path
       import os
 
       app_name = os.environ["APP_NAME"]
-      description = os.environ["APP_DESCRIPTION"]
 
       path = Path("lib/main.dart")
+      text = path.read_text(encoding="utf-8")
 
-      dart = r"""
-      import 'package:flutter/material.dart';
-
-      void main() {
-        runApp(const Code2APKApp());
-      }
-
-      class Code2APKApp extends StatelessWidget {
-        const Code2APKApp({super.key});
-
-        @override
-        Widget build(BuildContext context) {
-          return MaterialApp(
-            debugShowCheckedModeBanner: false,
-            title: APP_TITLE,
-            theme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.blue,
-              ),
-              useMaterial3: true,
-            ),
-            home: const HomePage(),
-          );
-        }
-      }
-
-      class HomePage extends StatelessWidget {
-        const HomePage({super.key});
-
-        @override
-        Widget build(BuildContext context) {
-          return Scaffold(
-            appBar: AppBar(
-              title: const Text(APP_TITLE),
-              centerTitle: true,
-            ),
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.phone_android,
-                      size: 80,
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    const Text(
-                      APP_TITLE,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    const Text(
-                      APP_DESCRIPTION,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 18,
-                      ),
-                    ),
-
-                    const SizedBox(height: 35),
-
-                    ElevatedButton(
-                      onPressed: () {},
-                      child: const Text(
-                        "ابدأ الآن",
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
-      }
-      """
-
-      dart = dart.replace(
-          "APP_TITLE",
-          "'" + app_name.replace("'", "\\'") + "'"
+      text = text.replace(
+          "MyHomePage(title: 'Flutter Demo Home Page')",
+          "MyHomePage(title: '" +
+          app_name.replace("'", "\\'") +
+          "')"
       )
 
-      dart = dart.replace(
-          "APP_DESCRIPTION",
-          "'" + description.replace("'", "\\'") + "'"
-      )
-
-      path.write_text(dart, encoding="utf-8")
+      path.write_text(text, encoding="utf-8")
       PY
 
   - name: Get dependencies
