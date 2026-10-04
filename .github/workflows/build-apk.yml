@@ -29,9 +29,17 @@ jobs:
 
     steps:
 
+      # ==========================================
+      # 1. Checkout
+      # ==========================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # ==========================================
+      # 2. Setup Flutter
+      # ==========================================
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -40,6 +48,10 @@ jobs:
           channel: stable
           cache: true
 
+
+      # ==========================================
+      # 3. Create Flutter project
+      # ==========================================
 
       - name: Create Flutter project
         env:
@@ -71,13 +83,21 @@ jobs:
               ;;
           esac
 
-          echo "Project name: $PROJECT_NAME"
+          echo "=========================================="
+          echo "Application name: $APP_NAME"
+          echo "Package ID: $PACKAGE_ID"
+          echo "Flutter project name: $PROJECT_NAME"
+          echo "=========================================="
 
           flutter create \
             --org "$PACKAGE_ID" \
             --project-name "$PROJECT_NAME" \
             flutter_app
 
+
+      # ==========================================
+      # 4. Generate Flutter code with Gemini
+      # ==========================================
 
       - name: Generate Flutter code with Gemini
         working-directory: flutter_app
@@ -92,17 +112,29 @@ jobs:
           import json
           import os
           import re
+          import time
           import urllib.request
           import urllib.error
           from pathlib import Path
+
+
+          # ==========================================
+          # Environment
+          # ==========================================
 
           api_key = os.environ["GEMINI_API_KEY"]
           app_name = os.environ["APP_NAME"]
           description = os.environ["APP_DESCRIPTION"]
 
+
           if not api_key:
               print("ERROR: GEMINI_API_KEY is empty.")
               raise SystemExit(1)
+
+
+          # ==========================================
+          # Gemini prompt
+          # ==========================================
 
           prompt = f"""
           You are an expert Flutter developer.
@@ -115,33 +147,60 @@ jobs:
           APPLICATION NAME:
           {app_name}
 
-          Requirements:
+          REQUIREMENTS:
 
           1. Generate a REAL working Flutter application.
+
           2. Do not create a mockup.
+
           3. All requested buttons and functions must work.
+
           4. Use Material 3.
-          5. Create a modern beautiful UI.
+
+          5. Create a modern and beautiful interface.
+
           6. If Arabic is requested, support Arabic RTL.
+
           7. The application must compile with Flutter 3.35.6.
+
           8. Use Flutter SDK libraries whenever possible.
+
           9. You may use flutter_localizations when needed.
+
           10. Avoid unnecessary external packages.
+
           11. Include every required import.
+
           12. Include a valid main() function.
+
           13. Keep the application inside lib/main.dart.
+
           14. Do not explain the code.
+
           15. Do not use Markdown.
+
           16. Return ONLY the complete Dart source code.
-          17. Do not return ```dart or ``` markers.
+
+          17. Do not return code fences.
+
           18. Check the Dart syntax before returning.
+
+          19. Make every requested feature actually functional.
+
+          20. Make the application ready to build as an APK.
           """
+
+
+          # ==========================================
+          # Gemini API URL
+          # ==========================================
 
           url = (
               "https://generativelanguage.googleapis.com/"
               "v1beta/models/gemini-2.5-flash:generateContent"
               "?key=" + api_key
           )
+
 
           payload = {
               "contents": [
@@ -159,53 +218,191 @@ jobs:
               }
           }
 
-          request = urllib.request.Request(
-              url,
-              data=json.dumps(payload).encode("utf-8"),
-              headers={
-                  "Content-Type": "application/json"
-              },
-              method="POST"
-          )
 
-          try:
-              with urllib.request.urlopen(
-                  request,
-                  timeout=180
-              ) as response:
+          data = json.dumps(payload).encode("utf-8")
+
+
+          # ==========================================
+          # Retry Gemini request
+          # ==========================================
+
+          max_attempts = 5
+          result = None
+
+
+          for attempt in range(1, max_attempts + 1):
+
+              print("")
+              print("==========================================")
+              print(
+                  f"Gemini request attempt {attempt}/{max_attempts}"
+              )
+              print("==========================================")
+
+
+              request = urllib.request.Request(
+                  url,
+                  data=data,
+                  headers={
+                      "Content-Type": "application/json"
+                  },
+                  method="POST"
+              )
+
+
+              try:
+
+                  with urllib.request.urlopen(
+                      request,
+                      timeout=180
+                  ) as response:
+
+                      status_code = response.status
+
+                      response_text = (
+                          response.read()
+                          .decode("utf-8")
+                      )
+
+
+                  print(
+                      "Gemini HTTP status:",
+                      status_code
+                  )
+
 
                   result = json.loads(
-                      response.read().decode("utf-8")
+                      response_text
                   )
 
-          except urllib.error.HTTPError as e:
 
-              print("GEMINI API ERROR:")
+                  # Successful response.
+
+                  if status_code == 200:
+
+                      print(
+                          "Gemini request succeeded."
+                      )
+
+                      break
+
+
+              except urllib.error.HTTPError as e:
+
+                  status_code = e.code
+
+                  error_body = (
+                      e.read()
+                      .decode(
+                          "utf-8",
+                          errors="replace"
+                      )
+                  )
+
+
+                  print(
+                      "Gemini HTTP error:",
+                      status_code
+                  )
+
+                  print(error_body)
+
+
+                  # Retry temporary errors.
+
+                  if status_code in (429, 500, 502, 503, 504):
+
+                      if attempt < max_attempts:
+
+                          wait_seconds = 15 * attempt
+
+                          print(
+                              f"Temporary Gemini error."
+                              f" Waiting {wait_seconds}"
+                              f" seconds before retry..."
+                          )
+
+                          time.sleep(
+                              wait_seconds
+                          )
+
+                          continue
+
+
+                  print(
+                      "Gemini request failed permanently."
+                  )
+
+                  raise SystemExit(1)
+
+
+              except Exception as e:
+
+                  print(
+                      "Gemini request exception:"
+                  )
+
+                  print(str(e))
+
+
+                  if attempt < max_attempts:
+
+                      wait_seconds = 15 * attempt
+
+                      print(
+                          f"Retrying in "
+                          f"{wait_seconds} seconds..."
+                      )
+
+                      time.sleep(
+                          wait_seconds
+                      )
+
+                      continue
+
+
+                  raise SystemExit(1)
+
+
+          # ==========================================
+          # Check final response
+          # ==========================================
+
+          if result is None:
+
               print(
-                  e.read().decode(
-                      "utf-8",
-                      errors="replace"
-                  )
+                  "ERROR: Gemini did not return a response."
               )
 
               raise SystemExit(1)
 
-          except Exception as e:
 
-              print("GEMINI REQUEST FAILED:")
-              print(str(e))
-
-              raise SystemExit(1)
+          # ==========================================
+          # Extract generated code
+          # ==========================================
 
           try:
+
               generated_code = (
                   result["candidates"][0]
-                  ["content"]["parts"][0]["text"]
+                  ["content"]
+                  ["parts"][0]
+                  ["text"]
               )
 
           except Exception:
 
-              print("UNEXPECTED GEMINI RESPONSE:")
+              print(
+                  "=========================================="
+              )
+
+              print(
+                  "UNEXPECTED GEMINI RESPONSE"
+              )
+
+              print(
+                  "=========================================="
+              )
 
               print(
                   json.dumps(
@@ -217,7 +414,13 @@ jobs:
 
               raise SystemExit(1)
 
+
           generated_code = generated_code.strip()
+
+
+          # ==========================================
+          # Remove Markdown fences
+          # ==========================================
 
           if generated_code.startswith("```"):
 
@@ -234,25 +437,67 @@ jobs:
                   generated_code
               )
 
+
           generated_code = generated_code.strip()
 
+
+          # ==========================================
+          # Validate generated code
+          # ==========================================
+
           if not generated_code:
-              print("Gemini returned empty code.")
+
+              print(
+                  "ERROR: Gemini returned empty code."
+              )
+
               raise SystemExit(1)
+
 
           if "void main(" not in generated_code:
-              print("Generated code does not contain main().")
+
+              print(
+                  "ERROR: Generated code does not contain main()."
+              )
+
+              print(
+                  generated_code[:10000]
+              )
+
               raise SystemExit(1)
 
-          Path("lib/main.dart").write_text(
+
+          # ==========================================
+          # Save main.dart
+          # ==========================================
+
+          Path(
+              "lib/main.dart"
+          ).write_text(
               generated_code,
               encoding="utf-8"
           )
 
-          print("Gemini code generated successfully.")
+
+          print("")
+          print("==========================================")
+          print(
+              "Gemini generated Flutter code successfully."
+          )
+          print("==========================================")
+
+          print(
+              "Generated code size:",
+              len(generated_code),
+              "characters"
+          )
 
           PY
 
+
+      # ==========================================
+      # 5. Add required Flutter localization
+      # ==========================================
 
       - name: Fix Flutter dependencies
         working-directory: flutter_app
@@ -263,12 +508,20 @@ jobs:
           flutter pub get
 
 
+      # ==========================================
+      # 6. Remove default test
+      # ==========================================
+
       - name: Remove default Flutter test
         working-directory: flutter_app
         run: |
 
           rm -f test/widget_test.dart
 
+
+      # ==========================================
+      # 7. Analyze
+      # ==========================================
 
       - name: Analyze Flutter project
         working-directory: flutter_app
@@ -277,12 +530,20 @@ jobs:
           flutter analyze
 
 
+      # ==========================================
+      # 8. Build APK
+      # ==========================================
+
       - name: Build APK
         working-directory: flutter_app
         run: |
 
           flutter build apk --release
 
+
+      # ==========================================
+      # 9. Upload APK
+      # ==========================================
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
