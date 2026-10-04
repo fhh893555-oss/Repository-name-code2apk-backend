@@ -1,4 +1,4 @@
-name: Build Flutter APK
+name: Build Flutter APK with Gemini
 
 on:
   workflow_dispatch:
@@ -28,8 +28,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Flutter
@@ -48,368 +47,165 @@ jobs:
             --project-name "${{ inputs.project_name }}" \
             flutter_app
 
-      - name: Generate application
+      - name: Generate Flutter code with Gemini
         working-directory: flutter_app
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           APP_NAME: ${{ inputs.app_name }}
           APP_DESCRIPTION: ${{ inputs.description }}
         run: |
           python3 - <<'PY'
-          from pathlib import Path
+          import json
           import os
+          import re
+          import urllib.request
+          import urllib.error
+          from pathlib import Path
 
+          api_key = os.environ["GEMINI_API_KEY"]
           app_name = os.environ["APP_NAME"]
           description = os.environ["APP_DESCRIPTION"]
 
-          # ------------------------------------------------
-          # Detect application type
-          # ------------------------------------------------
+          prompt = f"""
+          You are an expert Flutter developer.
 
-          text = description.lower()
+          Generate a complete Flutter application based ONLY on this user request:
 
-          is_calculator = any(word in text for word in [
-              "حاسبة",
-              "حاسبه",
-              "حساب",
-              "calculator",
-              "calc"
-          ])
+          {description}
 
-          # ------------------------------------------------
-          # Calculator application
-          # ------------------------------------------------
+          Application name:
+          {app_name}
 
-          if is_calculator:
+          Requirements:
 
-              main_dart = r'''
-          import 'package:flutter/material.dart';
+          1. Generate production-quality Flutter/Dart code.
+          2. The application must be functional, not just a mockup.
+          3. Use Material 3.
+          4. Make the UI modern and beautiful.
+          5. Support Arabic and RTL when the requested application uses Arabic.
+          6. Do not explain the code.
+          7. Return ONLY the complete contents of lib/main.dart.
+          8. Do not use Markdown code fences.
+          9. Prefer Flutter SDK libraries only.
+          10. Do not add external packages unless absolutely necessary.
+          11. The code must compile with Flutter 3.35.6.
+          12. Include all required imports.
+          13. The code must contain a main() function.
+          """
 
-          void main() {
-            runApp(const CalculatorApp());
-          }
+          url = (
+              "https://generativelanguage.googleapis.com/"
+              "v1beta/models/gemini-2.5-flash:generateContent"
+              "?key=" + api_key
+          )
 
-          class CalculatorApp extends StatelessWidget {
-            const CalculatorApp({super.key});
-
-            @override
-            Widget build(BuildContext context) {
-              return MaterialApp(
-                debugShowCheckedModeBanner: false,
-                title: 'APP_NAME',
-                theme: ThemeData(
-                  brightness: Brightness.dark,
-                  useMaterial3: true,
-                ),
-                home: const CalculatorPage(),
-              );
-            }
-          }
-
-          class CalculatorPage extends StatefulWidget {
-            const CalculatorPage({super.key});
-
-            @override
-            State<CalculatorPage> createState() =>
-                _CalculatorPageState();
-          }
-
-          class _CalculatorPageState
-              extends State<CalculatorPage> {
-
-            String display = '0';
-            double? firstNumber;
-            String? operation;
-            bool newNumber = true;
-
-            void press(String value) {
-              setState(() {
-
-                if (value == 'C') {
-                  display = '0';
-                  firstNumber = null;
-                  operation = null;
-                  newNumber = true;
-                  return;
-                }
-
-                if (value == '+' ||
-                    value == '-' ||
-                    value == '×' ||
-                    value == '÷') {
-
-                  firstNumber =
-                      double.tryParse(display) ?? 0;
-
-                  operation = value;
-                  newNumber = true;
-                  return;
-                }
-
-                if (value == '=') {
-                  final secondNumber =
-                      double.tryParse(display) ?? 0;
-
-                  if (firstNumber != null &&
-                      operation != null) {
-
-                    double result = 0;
-
-                    switch (operation) {
-                      case '+':
-                        result = firstNumber! + secondNumber;
-                        break;
-
-                      case '-':
-                        result = firstNumber! - secondNumber;
-                        break;
-
-                      case '×':
-                        result = firstNumber! * secondNumber;
-                        break;
-
-                      case '÷':
-                        if (secondNumber == 0) {
-                          display = 'خطأ';
-                          firstNumber = null;
-                          operation = null;
-                          newNumber = true;
-                          return;
-                        }
-
-                        result =
-                            firstNumber! / secondNumber;
-                        break;
-                    }
-
-                    if (result == result.roundToDouble()) {
-                      display = result.toInt().toString();
-                    } else {
-                      display = result.toString();
-                    }
-
-                    firstNumber = null;
-                    operation = null;
-                    newNumber = true;
+          payload = {
+              "contents": [
+                  {
+                      "parts": [
+                          {
+                              "text": prompt
+                          }
+                      ]
                   }
-
-                  return;
-                }
-
-                if (value == '.') {
-
-                  if (newNumber) {
-                    display = '0.';
-                    newNumber = false;
-                  } else if (!display.contains('.')) {
-                    display += '.';
-                  }
-
-                  return;
-                }
-
-                if (newNumber || display == '0') {
-                  display = value;
-                  newNumber = false;
-                } else {
-                  display += value;
-                }
-              });
-            }
-
-            Widget calculatorButton(
-                String value,
-                {bool operationButton = false}) {
-
-              return Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(5),
-                  child: ElevatedButton(
-                    onPressed: () => press(value),
-                    child: Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }
-
-            @override
-            Widget build(BuildContext context) {
-
-              return Scaffold(
-                appBar: AppBar(
-                  title: const Text('APP_NAME'),
-                  centerTitle: true,
-                ),
-
-                body: SafeArea(
-                  child: Column(
-                    children: [
-
-                      Expanded(
-                        flex: 2,
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(25),
-                          alignment: Alignment.bottomRight,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerRight,
-                            child: Text(
-                              display,
-                              style: const TextStyle(
-                                fontSize: 56,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      Expanded(
-                        flex: 5,
-                        child: Column(
-                          children: [
-
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  calculatorButton('7'),
-                                  calculatorButton('8'),
-                                  calculatorButton('9'),
-                                  calculatorButton('÷'),
-                                ],
-                              ),
-                            ),
-
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  calculatorButton('4'),
-                                  calculatorButton('5'),
-                                  calculatorButton('6'),
-                                  calculatorButton('×'),
-                                ],
-                              ),
-                            ),
-
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  calculatorButton('1'),
-                                  calculatorButton('2'),
-                                  calculatorButton('3'),
-                                  calculatorButton('-'),
-                                ],
-                              ),
-                            ),
-
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  calculatorButton('0'),
-                                  calculatorButton('.'),
-                                  calculatorButton('C'),
-                                  calculatorButton('+'),
-                                ],
-                              ),
-                            ),
-
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  calculatorButton('='),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }
+              ],
+              "generationConfig": {
+                  "temperature": 0.2,
+                  "maxOutputTokens": 30000
+              }
           }
-          '''
 
-              main_dart = main_dart.replace(
-                  "APP_NAME",
-                  app_name.replace("'", "\\'")
+          data = json.dumps(payload).encode("utf-8")
+
+          request = urllib.request.Request(
+              url,
+              data=data,
+              headers={
+                  "Content-Type": "application/json"
+              },
+              method="POST"
+          )
+
+          try:
+              with urllib.request.urlopen(request, timeout=180) as response:
+                  result = json.loads(
+                      response.read().decode("utf-8")
+                  )
+
+          except urllib.error.HTTPError as e:
+              error_body = e.read().decode("utf-8", errors="replace")
+              print("Gemini API error:")
+              print(error_body)
+              raise SystemExit(1)
+
+          except Exception as e:
+              print("Gemini request failed:")
+              print(str(e))
+              raise SystemExit(1)
+
+          try:
+              generated_code = result["candidates"][0]["content"]["parts"][0]["text"]
+          except Exception:
+              print("Unexpected Gemini response:")
+              print(json.dumps(result, indent=2))
+              raise SystemExit(1)
+
+          generated_code = generated_code.strip()
+
+          # Remove Markdown fences if Gemini returns them anyway.
+          if generated_code.startswith("```"):
+              generated_code = re.sub(
+                  r"^```(?:dart)?\s*",
+                  "",
+                  generated_code,
+                  flags=re.IGNORECASE
               )
 
-              Path("lib/main.dart").write_text(
-                  main_dart,
-                  encoding="utf-8"
+              generated_code = re.sub(
+                  r"\s*```$",
+                  "",
+                  generated_code
               )
 
-          else:
+          generated_code = generated_code.strip()
 
-              # ------------------------------------------------
-              # Default application
-              # ------------------------------------------------
+          if not generated_code:
+              print("Gemini returned empty code.")
+              raise SystemExit(1)
 
-              main_dart = f'''
-          import 'package:flutter/material.dart';
+          if "void main(" not in generated_code:
+              print("Generated code does not contain main().")
+              print(generated_code[:5000])
+              raise SystemExit(1)
 
-          void main() {{
-            runApp(const MyApp());
-          }}
+          Path("lib/main.dart").write_text(
+              generated_code,
+              encoding="utf-8"
+          )
 
-          class MyApp extends StatelessWidget {{
-            const MyApp({{super.key}});
+          print("Gemini generated Flutter code successfully.")
+          print("main.dart size:", len(generated_code))
 
-            @override
-            Widget build(BuildContext context) {{
-              return MaterialApp(
-                debugShowCheckedModeBanner: false,
-                title: '{app_name.replace("'", "\\'")}',
-                theme: ThemeData(
-                  colorScheme: ColorScheme.fromSeed(
-                    seedColor: Colors.blue,
-                  ),
-                  useMaterial3: true,
-                ),
-                home: Scaffold(
-                  appBar: AppBar(
-                    title: const Text(
-                      '{app_name.replace("'", "\\'")}',
-                    ),
-                  ),
-                  body: Center(
-                    child: Text(
-                      '{description.replace("'", "\\'")}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 22,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }}
-          }}
-          '''
+          PY
 
-              Path("lib/main.dart").write_text(
-                  main_dart,
-                  encoding="utf-8"
-              )
-
-      - name: Get dependencies
+      - name: Get Flutter dependencies
         working-directory: flutter_app
-        run: flutter pub get
+        run: |
+          flutter pub get
+
+      - name: Analyze Flutter project
+        working-directory: flutter_app
+        run: |
+          flutter analyze
 
       - name: Build APK
         working-directory: flutter_app
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Code2APK-${{ inputs.project_name }}
           path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
